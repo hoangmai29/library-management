@@ -3,7 +3,7 @@ pipeline {
         stages {
             stage('Checkout') {
                 steps {
-                    git url: 'https://github.com/phatchamcom/library-management.git'
+                    git url: 'https://github.com/hoangmai29/library-management'
                 }
             }
             stage('Build') {
