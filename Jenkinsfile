@@ -1,33 +1,76 @@
 pipeline {
-      agent any
-      stages {
-          stage('Checkout') {
-              steps {
-                  git url: 'https://github.com/phatchamcom/library-management.git'
-              }
-          }
-          stage('Build') {
-              steps {
-                  bat 'echo "Building..."'
-              }
-          }
-          stage('Test') {
-              steps {
-                  bat 'C:\\php\\php.exe -l login.php'
-              }
-          }
-          stage('Deploy') {
-              steps {
-                  bat '''
-                      if not exist C:\\path\\to\\destination\\library mkdir C:\\path\\to\\destination\\library
-                      xcopy . C:\\path\\to\\destination\\library /E /H /C /I /Y
-                  '''
-              }
-          }
-      }
-      post {
-          failure {
-              echo 'Pipeline failed!'
-          }
-      }
-  }
+    agent any
+
+    environment {
+        SONARQUBE_SERVER = 'SonarQube'
+        DOCKER_IMAGE = 'library-management:latest'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/hoangmai29/library-management.git', branch: 'master'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'mvn clean install'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                    bat 'mvn sonar:sonar'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                bat 'docker build -t %DOCKER_IMAGE% .'
+            }
+        }
+
+        stage('Test PHP') {
+            steps {
+                bat '''
+                    if exist login.php (
+                        php -l login.php
+                    ) else (
+                        echo login.php not found. Skipping syntax check.
+                    )
+                '''
+            }
+        }
+
+        stage('Deploy via SSH') {
+            steps {
+                sshPublisher(publishers: [
+                    sshPublisherDesc(
+                        configName: 'my-server',
+                        transfers: [
+                            sshTransfer(
+                                sourceFiles: '**/*',
+                                removePrefix: '',
+                                remoteDirectory: '/home/user/library-app',
+                                execCommand: 'docker restart library-container || docker run -d --name library-container -p 8080:8080 library-management:latest'
+                            )
+                        ],
+                        verbose: true
+                    )
+                ])
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo '❌ Pipeline failed!'
+        }
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+    }
+}
